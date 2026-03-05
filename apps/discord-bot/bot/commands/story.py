@@ -15,7 +15,7 @@ logger = logging.getLogger("nexus.discord.commands.story")
 
 
 # ============================================================
-# Protocols (ports) expected from your app services container
+# واجهات الخدمات (Ports)
 # ============================================================
 
 class StoryServicePort(Protocol):
@@ -69,7 +69,8 @@ class ProgressionServicePort(Protocol):
         choice_id: str,
     ) -> tuple[dict, str, dict]:
         """
-        returns (updated_player, next_part_id, applied_effects)
+        يعيد:
+            (اللاعب بعد التحديث, next_part_id, التأثيرات المطبقة)
         """
         ...
 
@@ -111,22 +112,25 @@ class ServicesPort(Protocol):
 
 
 # ============================================================
-# Constants
+# ثوابت العرض
 # ============================================================
 
 WORLD_ORDER = ["fantasy", "retro", "future", "alternate"]
-WORLD_NAMES = {
-    "fantasy": "Fantasy",
-    "retro": "Retro",
-    "future": "Future",
-    "alternate": "Alternate",
+
+WORLD_NAMES_AR = {
+    "fantasy": "عالم الفانتازيا",
+    "retro": "عالم الماضي",
+    "future": "عالم المستقبل",
+    "alternate": "الواقع البديل",
 }
+
 WORLD_EMOJIS = {
     "fantasy": "🌲",
     "retro": "📜",
     "future": "🤖",
     "alternate": "🌀",
 }
+
 WORLD_COLORS = {
     "fantasy": 0x9B59B6,
     "retro": 0x3498DB,
@@ -140,14 +144,13 @@ WORLD_COLORS = {
 
 
 # ============================================================
-# Button Payload
+# payload الأزرار (ثابت + قابل للاستعادة)
 # ============================================================
 
 @dataclass(frozen=True)
 class StoryButtonPayload:
     """
-    Stable custom_id schema for persistent buttons.
-    Keep short but deterministic:
+    custom_id موحد:
       nx:v1:{user_id}:{world_id}:{part_id}:{choice_id}:{nonce}
     """
     user_id: int
@@ -189,13 +192,13 @@ def new_payload(user_id: int, world_id: str, part_id: str, choice_id: str) -> St
 
 
 # ============================================================
-# Embed Builders
+# تصميم الـ Embeds (2 Embeds)
 # ============================================================
 
-def build_story_embed(*, world_id: str, part: dict) -> discord.Embed:
+def _build_story_embed(*, world_id: str, part: dict) -> discord.Embed:
     color = WORLD_COLORS.get(world_id, WORLD_COLORS["general"])
-    title = part.get("title", "Untitled Part")
-    text = part.get("text", "No text provided.")
+    title = part.get("title", "فصل غير معنون")
+    text = part.get("text", "لا يوجد نص لهذا الفصل.")
     part_id = part.get("id", "unknown")
 
     embed = discord.Embed(
@@ -209,19 +212,19 @@ def build_story_embed(*, world_id: str, part: dict) -> discord.Embed:
     if choices:
         lines = []
         for idx, c in enumerate(choices, start=1):
-            c_text = c.get("text", f"Choice {idx}")
-            lines.append(f"{idx}. {c_text}")
-        embed.add_field(name="🧭 Choices", value="\n".join(lines)[:1024], inline=False)
+            txt = c.get("text", f"خيار {idx}")
+            lines.append(f"{idx}. {txt}")
+        embed.add_field(name="🧭 الخيارات المتاحة", value="\n".join(lines)[:1024], inline=False)
     else:
-        embed.add_field(name="🏁 Ending", value="This node has no choices.", inline=False)
+        embed.add_field(name="🏁 نهاية", value="لا توجد خيارات إضافية في هذا المسار.", inline=False)
 
-    embed.set_footer(text=f"{WORLD_NAMES.get(world_id, world_id)} • {part_id}")
+    embed.set_footer(text=f"{WORLD_NAMES_AR.get(world_id, world_id)} • {part_id}")
     return embed
 
 
-def build_status_embed(*, player: dict, world_id: str) -> discord.Embed:
+def _build_status_embed(*, player: dict, world_id: str) -> discord.Embed:
     embed = discord.Embed(
-        title="📊 Your Status",
+        title="📊 حالتك الحالية",
         color=WORLD_COLORS["general"],
         timestamp=datetime.now(timezone.utc),
     )
@@ -232,37 +235,36 @@ def build_status_embed(*, player: dict, world_id: str) -> discord.Embed:
     corruption = player.get("corruption", 0)
     current_world = player.get("current_world", "fantasy")
 
-    embed.add_field(name="Level", value=str(level), inline=True)
-    embed.add_field(name="XP", value=str(xp), inline=True)
-    embed.add_field(name="Shards", value=str(shards), inline=True)
-    embed.add_field(name="Corruption", value=str(corruption), inline=True)
-    embed.add_field(name="Current World", value=f"{WORLD_EMOJIS.get(current_world, '🌍')} {WORLD_NAMES.get(current_world, current_world)}", inline=True)
+    embed.add_field(name="المستوى", value=str(level), inline=True)
+    embed.add_field(name="الخبرة", value=str(xp), inline=True)
+    embed.add_field(name="الشظايا", value=str(shards), inline=True)
+    embed.add_field(name="الفساد", value=str(corruption), inline=True)
+    embed.add_field(
+        name="العالم الحالي",
+        value=f"{WORLD_EMOJIS.get(current_world, '🌍')} {WORLD_NAMES_AR.get(current_world, current_world)}",
+        inline=True,
+    )
 
     traits = player.get("traits", {})
     if isinstance(traits, dict) and traits:
         trait_lines = [f"• {k}: {v}" for k, v in traits.items()]
-        embed.add_field(name="Adaptive Traits", value="\n".join(trait_lines)[:1024], inline=False)
+        embed.add_field(name="سماتك", value="\n".join(trait_lines)[:1024], inline=False)
 
     endings = player.get("endings", {})
     if isinstance(endings, dict):
         ending_lines = []
         for w in WORLD_ORDER:
-            ending_lines.append(f"{WORLD_EMOJIS[w]} {WORLD_NAMES[w]}: {endings.get(w) or '-'}")
-        embed.add_field(name="Endings", value="\n".join(ending_lines)[:1024], inline=False)
+            ending_lines.append(f"{WORLD_EMOJIS[w]} {WORLD_NAMES_AR[w]}: {endings.get(w) or '-'}")
+        embed.add_field(name="النهايات", value="\n".join(ending_lines)[:1024], inline=False)
 
     return embed
 
 
 # ============================================================
-# Persistent Story View
+# View أزرار القصة (Persistent)
 # ============================================================
 
 class PersistentStoryView(discord.ui.View):
-    """
-    timeout=None => persistent across runtime.
-    For full reboot recovery, re-create views from session states on startup.
-    """
-
     def __init__(
         self,
         *,
@@ -271,23 +273,22 @@ class PersistentStoryView(discord.ui.View):
         world_id: str,
         part: dict,
     ) -> None:
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # مهم: حتى الأزرار تظل ثابتة
         self.services = services
         self.user_id = user_id
         self.world_id = world_id
         self.part = part
         self.part_id = part.get("id", "unknown")
 
-        choices = part.get("choices", [])
-        for c in choices:
-            choice_id = str(c.get("id", "unknown"))
-            label = str(c.get("text", "choice"))[:80]
+        for choice in part.get("choices", []):
+            choice_id = str(choice.get("id", "unknown"))
+            label = str(choice.get("text", "خيار"))[:80]
             payload = new_payload(user_id, world_id, self.part_id, choice_id)
 
             button = discord.ui.Button(
                 label=label,
                 style=discord.ButtonStyle.primary,
-                custom_id=payload.encode()[:100],  # Discord limit safety
+                custom_id=payload.encode()[:100],  # حد ديسكورد
             )
             button.callback = self._on_choice_pressed  # type: ignore[assignment]
             self.add_item(button)
@@ -297,19 +298,18 @@ class PersistentStoryView(discord.ui.View):
             custom_id = str((interaction.data or {}).get("custom_id", ""))
             payload = StoryButtonPayload.decode(custom_id)
             if not payload:
-                await interaction.response.send_message("❌ Invalid button payload.", ephemeral=True)
+                await interaction.response.send_message("❌ زر غير صالح.", ephemeral=True)
                 return
 
-            # user lock
+            # منع استخدام أزرار لاعب آخر
             if interaction.user.id != payload.user_id:
-                await interaction.response.send_message("❌ This button belongs to another player.", ephemeral=True)
+                await interaction.response.send_message("❌ هذا الزر ليس لك.", ephemeral=True)
                 return
 
-            # safety: if part in payload doesn't exist anymore -> no dead button
             current_part = await self.services.story.get_part(payload.world_id, payload.part_id)
             if not current_part:
                 await interaction.response.send_message(
-                    "⚠️ This story node is no longer available. Use `/continue` to recover.",
+                    "⚠️ هذا الجزء لم يعد متاحًا. استخدم `/استمر` لاستعادة الجلسة.",
                     ephemeral=True,
                 )
                 await self.services.metrics.inc("story.button.dead_node")
@@ -317,7 +317,6 @@ class PersistentStoryView(discord.ui.View):
 
             player = await self.services.players.get_or_create_player(interaction.user.id, interaction.user.name)
 
-            # apply choice via progression engine
             updated_player, next_part_id, effects = await self.services.progression.apply_choice(
                 player=player,
                 world_id=payload.world_id,
@@ -325,7 +324,7 @@ class PersistentStoryView(discord.ui.View):
                 choice_id=payload.choice_id,
             )
 
-            # persist
+            # حفظ اللاعب + الجلسة
             await self.services.players.update_player(interaction.user.id, updated_player)
             await self.services.sessions.set_current_session(
                 interaction.user.id,
@@ -333,10 +332,11 @@ class PersistentStoryView(discord.ui.View):
                 part_id=next_part_id,
             )
 
-            choice_text = "unknown"
+            # حفظ التاريخ
+            choice_text = "غير معروف"
             for c in current_part.get("choices", []):
                 if str(c.get("id")) == payload.choice_id:
-                    choice_text = str(c.get("text", "unknown"))
+                    choice_text = str(c.get("text", "غير معروف"))
                     break
 
             await self.services.players.save_choice_history(
@@ -349,72 +349,72 @@ class PersistentStoryView(discord.ui.View):
                 effects=effects,
             )
 
-            # resolve next node
-            ending = await self.services.story.get_ending(payload.world_id, next_part_id)
-            if ending:
-                await self.services.metrics.inc("story.ending.reached")
+            # لو كان نهاية
+            ending_data = await self.services.story.get_ending(payload.world_id, next_part_id)
+            if ending_data:
                 ending_embed = discord.Embed(
-                    title=f"🏁 {ending.get('title', 'Ending')}",
-                    description=str(ending.get("text", "No ending text.")),
+                    title=f"🏁 {ending_data.get('title', 'نهاية')}",
+                    description=str(ending_data.get("text", "وصلت إلى نهاية هذا المسار.")),
                     color=WORLD_COLORS.get(payload.world_id, WORLD_COLORS["ok"]),
                     timestamp=datetime.now(timezone.utc),
                 )
                 ending_embed.add_field(
-                    name="Type",
-                    value=str(ending.get("type", "normal")),
+                    name="نوع النهاية",
+                    value=str(ending_data.get("type", "normal")),
                     inline=True,
                 )
-                rewards = ending.get("rewards", {})
+
+                rewards = ending_data.get("rewards", {})
                 if rewards:
                     ending_embed.add_field(
-                        name="Rewards",
+                        name="المكافآت",
                         value=f"`{rewards}`"[:1024],
                         inline=False,
                     )
 
-                status = build_status_embed(player=updated_player, world_id=payload.world_id)
+                status_embed = _build_status_embed(player=updated_player, world_id=payload.world_id)
                 await interaction.response.send_message(
-                    embeds=[ending_embed, status],
+                    embeds=[ending_embed, status_embed],
                     ephemeral=False,
                 )
+                await self.services.metrics.inc("story.ending.reached")
                 return
 
             next_part = await self.services.story.get_part(payload.world_id, next_part_id)
             if not next_part:
-                # no dead button: graceful fallback
                 await interaction.response.send_message(
-                    "⚠️ Next node is missing. Your progress was saved. Use `/continue`.",
+                    "⚠️ الجزء التالي غير موجود. تم حفظ تقدمك، استخدم `/استمر`.",
                     ephemeral=True,
                 )
                 await self.services.metrics.inc("story.button.missing_next")
                 return
 
-            next_view = PersistentStoryView(
+            view = PersistentStoryView(
                 services=self.services,
                 user_id=interaction.user.id,
                 world_id=payload.world_id,
                 part=next_part,
             )
-            story = build_story_embed(world_id=payload.world_id, part=next_part)
-            status = build_status_embed(player=updated_player, world_id=payload.world_id)
+            story_embed = _build_story_embed(world_id=payload.world_id, part=next_part)
+            status_embed = _build_status_embed(player=updated_player, world_id=payload.world_id)
 
             await interaction.response.send_message(
-                embeds=[story, status],
-                view=next_view,
+                embeds=[story_embed, status_embed],
+                view=view,
                 ephemeral=False,
             )
             await self.services.metrics.inc("story.choice.applied")
 
         except Exception:
-            logger.exception("Error while handling story button click.")
+            logger.exception("فشل معالجة ضغط زر القصة")
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Unexpected error while processing choice.", ephemeral=True)
+                await interaction.followup.send("❌ حدث خطأ أثناء تنفيذ الاختيار.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ Unexpected error while processing choice.", ephemeral=True)
+                await interaction.response.send_message("❌ حدث خطأ أثناء تنفيذ الاختيار.", ephemeral=True)
 
 
 # ============================================================
-# Story Commands Cog
+# Cog أوامر القصة العربية
 # ============================================================
 
 class StoryCog(commands.Cog):
@@ -422,65 +422,61 @@ class StoryCog(commands.Cog):
         self.bot = bot
         self.services = services
 
-    # --------------------------
-    # /start
-    # --------------------------
-    @app_commands.command(name="start", description="Start a story world")
-    @app_commands.describe(world="Choose a world to start")
-    @app_commands.choices(world=[
-        app_commands.Choice(name="🌲 Fantasy", value="fantasy"),
-        app_commands.Choice(name="📜 Retro", value="retro"),
-        app_commands.Choice(name="🤖 Future", value="future"),
-        app_commands.Choice(name="🌀 Alternate", value="alternate"),
+    @app_commands.command(name="ابدأ", description="🚀 ابدأ رحلتك في أحد العوالم")
+    @app_commands.describe(العالم="اختر العالم الذي تريد البدء فيه")
+    @app_commands.choices(العالم=[
+        app_commands.Choice(name="🌲 عالم الفانتازيا", value="fantasy"),
+        app_commands.Choice(name="📜 عالم الماضي", value="retro"),
+        app_commands.Choice(name="🤖 عالم المستقبل", value="future"),
+        app_commands.Choice(name="🌀 الواقع البديل", value="alternate"),
     ])
-    async def start(
+    async def start_command(
         self,
         interaction: discord.Interaction,
-        world: Optional[str] = None,
+        العالم: Optional[str] = None,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
 
         try:
-            target_world = world or "fantasy"
+            target_world = العالم or "fantasy"
             player = await self.services.players.get_or_create_player(interaction.user.id, interaction.user.name)
 
-            # unlock check
+            # فحص الفتح
             can_access, reason = await self.services.progression.can_access_world(player, target_world)
             if not can_access:
                 await interaction.followup.send(f"🔒 {reason}", ephemeral=True)
                 await self.services.metrics.inc("story.start.locked")
                 return
 
-            # channel policy check
+            # فحص سياسة القنوات
             allowed, policy_reason = await self.services.policy.validate_usage(
                 guild_id=interaction.guild.id if interaction.guild else None,
                 channel_id=interaction.channel_id,
                 world_id=target_world,
             )
             if not allowed:
-                await interaction.followup.send(policy_reason or "Blocked by channel policy.", ephemeral=True)
+                await interaction.followup.send(policy_reason or "❌ لا يمكنك استخدام هذا الأمر هنا.", ephemeral=True)
                 await self.services.metrics.inc("story.start.channel_blocked")
                 return
 
             if policy_reason:
                 await interaction.followup.send(policy_reason, ephemeral=True)
 
-            # resolve start part from story files (NOT hardcoded)
             start_part_id = await self.services.story.get_start_part_id(target_world)
             start_part = await self.services.story.get_part(target_world, start_part_id)
             if not start_part:
                 await interaction.followup.send(
-                    f"❌ Start part `{start_part_id}` is missing for world `{target_world}`.",
+                    f"❌ لم يتم العثور على بداية العالم `{target_world}`.",
                     ephemeral=True
                 )
-                await self.services.metrics.inc("story.start.missing_start_part")
+                await self.services.metrics.inc("story.start.missing_start")
                 return
 
-            # update session/player
+            # حفظ التقدم
             player["current_world"] = target_world
-            world_progress = player.get("world_progress", {})
-            world_progress[target_world] = start_part_id
-            player["world_progress"] = world_progress
+            progress = player.get("world_progress", {}) or {}
+            progress[target_world] = start_part_id
+            player["world_progress"] = progress
 
             await self.services.players.update_player(interaction.user.id, player)
             await self.services.sessions.set_current_session(
@@ -496,8 +492,8 @@ class StoryCog(commands.Cog):
                 part=start_part,
             )
 
-            story_embed = build_story_embed(world_id=target_world, part=start_part)
-            status_embed = build_status_embed(player=player, world_id=target_world)
+            story_embed = _build_story_embed(world_id=target_world, part=start_part)
+            status_embed = _build_status_embed(player=player, world_id=target_world)
 
             await interaction.followup.send(
                 embeds=[story_embed, status_embed],
@@ -507,30 +503,28 @@ class StoryCog(commands.Cog):
             await self.services.metrics.inc("story.start.success")
 
         except Exception:
-            logger.exception("Failed to execute /start")
-            await interaction.followup.send("❌ Failed to start story.", ephemeral=True)
+            logger.exception("فشل أمر /ابدأ")
+            await interaction.followup.send("❌ حدث خطأ أثناء بدء القصة.", ephemeral=True)
 
-    # --------------------------
-    # /continue
-    # --------------------------
-    @app_commands.command(name="continue", description="Continue from your latest checkpoint")
-    async def continue_story(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="استمر", description="⏩ أكمل رحلتك من آخر نقطة")
+    async def continue_command(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         try:
             player = await self.services.players.get_or_create_player(interaction.user.id, interaction.user.name)
             current_world = player.get("current_world") or "fantasy"
 
-            # channel policy check
+            # فحص سياسة القنوات
             allowed, policy_reason = await self.services.policy.validate_usage(
                 guild_id=interaction.guild.id if interaction.guild else None,
                 channel_id=interaction.channel_id,
                 world_id=current_world,
             )
             if not allowed:
-                await interaction.followup.send(policy_reason or "Blocked by channel policy.", ephemeral=True)
+                await interaction.followup.send(policy_reason or "❌ لا يمكنك استخدام هذا الأمر هنا.", ephemeral=True)
                 await self.services.metrics.inc("story.continue.channel_blocked")
                 return
+
             if policy_reason:
                 await interaction.followup.send(policy_reason, ephemeral=True)
 
@@ -544,7 +538,7 @@ class StoryCog(commands.Cog):
                 if not part_id:
                     part_id = await self.services.story.get_start_part_id(world_id)
 
-            # verify unlock (if world changed due to stale data)
+            # فحص الوصول للعالم
             can_access, reason = await self.services.progression.can_access_world(player, world_id)
             if not can_access:
                 await interaction.followup.send(f"🔒 {reason}", ephemeral=True)
@@ -553,16 +547,20 @@ class StoryCog(commands.Cog):
 
             part = await self.services.story.get_part(world_id, part_id)
             if not part:
-                # fallback to world start
+                # fallback آمن
                 start_part_id = await self.services.story.get_start_part_id(world_id)
                 part = await self.services.story.get_part(world_id, start_part_id)
                 if not part:
-                    await interaction.followup.send("❌ Unable to recover story checkpoint.", ephemeral=True)
+                    await interaction.followup.send("❌ تعذر استعادة تقدمك الحالي.", ephemeral=True)
                     await self.services.metrics.inc("story.continue.recovery_failed")
                     return
 
                 part_id = start_part_id
-                await self.services.sessions.set_current_session(interaction.user.id, world_id=world_id, part_id=part_id)
+                await self.services.sessions.set_current_session(
+                    interaction.user.id,
+                    world_id=world_id,
+                    part_id=part_id,
+                )
 
             view = PersistentStoryView(
                 services=self.services,
@@ -571,8 +569,8 @@ class StoryCog(commands.Cog):
                 part=part,
             )
 
-            story_embed = build_story_embed(world_id=world_id, part=part)
-            status_embed = build_status_embed(player=player, world_id=world_id)
+            story_embed = _build_story_embed(world_id=world_id, part=part)
+            status_embed = _build_status_embed(player=player, world_id=world_id)
 
             await interaction.followup.send(
                 embeds=[story_embed, status_embed],
@@ -582,19 +580,16 @@ class StoryCog(commands.Cog):
             await self.services.metrics.inc("story.continue.success")
 
         except Exception:
-            logger.exception("Failed to execute /continue")
-            await interaction.followup.send("❌ Failed to continue story.", ephemeral=True)
+            logger.exception("فشل أمر /استمر")
+            await interaction.followup.send("❌ حدث خطأ أثناء استكمال القصة.", ephemeral=True)
 
-    # --------------------------
-    # /worlds
-    # --------------------------
-    @app_commands.command(name="worlds", description="Show your world unlock and progress status")
-    async def worlds(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="عوالمي", description="🌍 عرض حالة العوالم (الفتح + التقدم)")
+    async def worlds_command(self, interaction: discord.Interaction) -> None:
         try:
             player = await self.services.players.get_or_create_player(interaction.user.id, interaction.user.name)
             embed = discord.Embed(
-                title="🌍 Worlds Status",
-                description="Unlock + progress snapshot",
+                title="🌍 حالة عوالمك",
+                description="ملخص الفتح والتقدم لكل عالم",
                 color=WORLD_COLORS["general"],
                 timestamp=datetime.now(timezone.utc),
             )
@@ -603,11 +598,11 @@ class StoryCog(commands.Cog):
                 can_access, reason = await self.services.progression.can_access_world(player, world_id)
                 progress = (player.get("world_progress", {}) or {}).get(world_id) or "-"
                 ending = (player.get("endings", {}) or {}).get(world_id) or "-"
-                state = "✅ Unlocked" if can_access else f"🔒 {reason}"
+                state = "✅ مفتوح" if can_access else f"🔒 {reason}"
 
                 embed.add_field(
-                    name=f"{WORLD_EMOJIS[world_id]} {WORLD_NAMES[world_id]}",
-                    value=f"{state}\nPart: `{progress}`\nEnding: `{ending}`",
+                    name=f"{WORLD_EMOJIS[world_id]} {WORLD_NAMES_AR[world_id]}",
+                    value=f"{state}\nالجزء الحالي: `{progress}`\nالنهاية: `{ending}`",
                     inline=False,
                 )
 
@@ -615,41 +610,38 @@ class StoryCog(commands.Cog):
             await self.services.metrics.inc("story.worlds.opened")
 
         except Exception:
-            logger.exception("Failed to execute /worlds")
+            logger.exception("فشل أمر /عوالمي")
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Failed to load worlds.", ephemeral=True)
+                await interaction.followup.send("❌ تعذر تحميل حالة العوالم.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ Failed to load worlds.", ephemeral=True)
+                await interaction.response.send_message("❌ تعذر تحميل حالة العوالم.", ephemeral=True)
 
-    # --------------------------
-    # /my_stats
-    # --------------------------
-    @app_commands.command(name="my_stats", description="Show your current player stats")
-    async def my_stats(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="احصائياتي", description="📊 عرض إحصائياتك الحالية")
+    async def my_stats_command(self, interaction: discord.Interaction) -> None:
         try:
             player = await self.services.players.get_or_create_player(interaction.user.id, interaction.user.name)
             world_id = player.get("current_world") or "fantasy"
-            embed = build_status_embed(player=player, world_id=world_id)
+            embed = _build_status_embed(player=player, world_id=world_id)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             await self.services.metrics.inc("story.stats.opened")
         except Exception:
-            logger.exception("Failed to execute /my_stats")
+            logger.exception("فشل أمر /احصائياتي")
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Failed to load stats.", ephemeral=True)
+                await interaction.followup.send("❌ تعذر تحميل الإحصائيات.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ Failed to load stats.", ephemeral=True)
+                await interaction.response.send_message("❌ تعذر تحميل الإحصائيات.", ephemeral=True)
 
 
 # ============================================================
-# Extension setup
+# setup
 # ============================================================
 
 async def setup(bot: commands.Bot) -> None:
     """
-    Requires bot.svc to exist and implement ServicesPort.
+    يتطلب وجود bot.svc وفيه الخدمات المطلوبة.
     """
     services = getattr(bot, "svc", None)
     if services is None:
         raise RuntimeError("Bot has no `svc` container attached.")
     await bot.add_cog(StoryCog(bot, services))
-    logger.info("StoryCog loaded.")
+    logger.info("✅ تم تحميل StoryCog (عربي).")
