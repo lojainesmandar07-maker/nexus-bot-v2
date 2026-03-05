@@ -44,13 +44,13 @@ def _truncate(text: str, max_len: int) -> str:
 def build_story_embed(*, world_id: str, part: dict[str, Any]) -> discord.Embed:
     """
     Story-only embed:
-      - عنوان الجزء
-      - نص القصة
-      - عرض الخيارات (preview)
-      - معلومات الفصل/العالم في footer
+    - عنوان القصة
+    - نص المشهد
+    - معاينة الخيارات
+    - لا يحتوي على أزرار (الأزرار في View منفصل)
     """
-
     world_id = _safe_world_id(world_id)
+
     color = WORLD_COLORS.get(world_id, WORLD_COLORS["general"])
     world_emoji = WORLD_EMOJIS.get(world_id, "🌍")
     world_name = WORLD_NAMES_AR.get(world_id, world_id)
@@ -59,45 +59,36 @@ def build_story_embed(*, world_id: str, part: dict[str, Any]) -> discord.Embed:
     title = str(part.get("title", "فصل جديد"))
     text = str(part.get("text", "لا يوجد نص لهذا الفصل."))
 
-    # Discord embed description limit: 4096
-    text = _truncate(text, 4096)
-
     embed = discord.Embed(
         title=f"{world_emoji} {title}",
-        description=text,
+        description=_truncate(text, 4096),
         color=color,
         timestamp=datetime.now(timezone.utc),
     )
 
-    # موقع المشهد (اختياري)
     location = part.get("location")
     if location:
         embed.add_field(name="📍 الموقع", value=_truncate(str(location), 1024), inline=False)
 
-    # الخيارات
     choices = part.get("choices", [])
     if isinstance(choices, list) and choices:
-        lines: list[str] = []
-        for idx, c in enumerate(choices, start=1):
-            c_text = str(c.get("text", f"خيار {idx}"))
-            c_emoji = str(c.get("emoji", "•"))
+        lines = []
+        for idx, choice in enumerate(choices, start=1):
+            c_emoji = str(choice.get("emoji", "•"))
+            c_text = str(choice.get("text", f"خيار {idx}"))
             lines.append(f"{idx}. {c_emoji} {c_text}")
-
-        choices_preview = "\n".join(lines)
         embed.add_field(
             name="🧭 الخيارات المتاحة",
-            value=_truncate(choices_preview, 1024),
+            value=_truncate("\n".join(lines), 1024),
             inline=False,
         )
     else:
-        # عقدة نهاية أو جزء بدون خيارات
         embed.add_field(
             name="🏁 الحالة",
             value="لا توجد خيارات إضافية في هذا الجزء.",
             inline=False,
         )
 
-    # tags (اختياري)
     tags = part.get("tags")
     if isinstance(tags, list) and tags:
         tags_text = " • ".join([str(t) for t in tags[:10]])
