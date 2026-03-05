@@ -264,7 +264,7 @@ def build_services(cfg: RuntimeConfig) -> AppServices:
         players=PlayerServiceImpl(),
         policy=ChannelPolicyServiceImpl(mode=policy_mode),
         sessions=SessionServiceImpl(),
-        registrar=CommandRegistrarImpl(),
+        registrar=CommandRegistrar(),  # ✅
         views=PersistentViewFactoryImpl(),
         metrics=MetricsServiceImpl(),
     )
